@@ -8,26 +8,25 @@ import crypto, { randomUUID } from 'crypto';
 const app = express();
 const port = 3000;
 
-function encrypt(input, key, iv, number = false) {
+function encrypt(input, key, iv) {
     const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
-
-    if (number == true) {
-        let encrypted = cipher.update(input.toString(), 'utf-8', 'hex')
-        encrypted += cipher.final('hex')
-
-        let enc_copy = encrypted
-        parseInt(enc_copy)
-        return enc_copy
-    }
-    else {
-        let encrypted = cipher.update(input, 'utf-8', 'hex')
-        encrypted += cipher.final('hex')
-
-        return encrypted
-    }
+    let encrypted = cipher.update(input, 'utf-8', 'hex')
+    encrypted += cipher.final('hex')
+    console.log(encrypted)
+    return encrypted
 
 }
-  
+
+function addFromLength(input, length) {
+    input += length
+    return input
+}
+
+function subtractFromLength(input, length) {
+    input -= length
+    return input
+}
+
   // Function to decrypt a string
 function decrypt(input, key, iv) {
     const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
@@ -37,12 +36,18 @@ function decrypt(input, key, iv) {
 }
 
 
-
 app.post('/upload', upload.single('file'), (req, res) => {  
-    // seed = req.body('seed')
+    if (req.body.shift > 10 && typeof(req.body.shift) !== 'number') {
+        res.json({
+            status: 400,
+            message: 'bad request',
+            error: 'input a number between 1-10'
+        })
+        return;
+    }
 
+    const coordAdd = req.body.shift
     const fileExtension = path.extname(req.file.originalname).toLowerCase();
-
     const newFileName = randomUUID().toString()
 
     let iv
@@ -64,63 +69,9 @@ app.post('/upload', upload.single('file'), (req, res) => {
         const exifData = px.load(imageData.toString('binary'));
 
         try {
-            // let exif_arr = [exifData['GPS'][px.GPSIFD.GPSLatitude], exifData['GPS'][px.GPSIFD.GPSLongitude], exifData['GPS'][px.GPSIFD.GPSSatellites], exifData['0th']['306'], exifData.Exif['36867'], exifData.Exif['36868'], exifData['0th']['271'], exifData['0th']['272']]
-            
-            // let exif_arr = [
-            //     {
-            //         new: newExif['GPS'][px.GPSIFD.GPSLatitude],
-            //         old: exifData['GPS'][px.GPSIFD.GPSLatitude]
-            //     }, 
-            //     {
-            //         new: newExif['GPS'][px.GPSIFD.GPSLongitude],
-            //         old: exifData['GPS'][px.GPSIFD.GPSLongitude]
-            //     }, 
-            //     {
-            //         new: newExif['GPS'][px.GPSIFD.GPSSatellites],
-            //         old: exifData['GPS'][px.GPSIFD.GPSSatellites]
-            //     }, 
-            //     {
-            //         new: newExif['0th']['306'],
-            //         old: exifData['0th']['306']
-            //     }, 
-            //     {
-            //         new: newExif.Exif['36867'],
-            //         old: exifData.Exif['36867']
-            //     }, 
-            //     {
-            //         new: newExif.Exif['36868'],
-            //         old: exifData.Exif['36868']
-            //     }, 
-            //     {
-            //         new: newExif['0th']['271'],
-            //         old: exifData['0th']['271']
-            //     }, 
-            //     {
-            //         new: newExif['0th']['272'],
-            //         old: exifData['0th']['272']
-            //     }
-            // ]
-
-            // for(let exif of exif_arr) {
-            //     console.log(exif + "\n")
-
-            //     if (!exif) {
-            //         continue
-            //     }
-            //     else {
-            //         exif = encrypt(exif, key, iv).toString()        
-            //     }
-            //     console.log(exif + "\n")
-            // }
-            
-            // exifData['GPS'][px.GPSIFD.GPSLatitude] = encrypt(exifData['GPS'][px.GPSIFD.GPSLatitude], key, iv)
-            // exifData['GPS'][px.GPSIFD.GPSLongitude] = encrypt(exifData['GPS'][px.GPSIFD.GPSLongitude], key, iv)
-            // exifData['GPS'][px.GPSIFD.GPSSatellites] = encrypt(exifData['GPS'][px.GPSIFD.GPSSatellites], key, iv)
             if (exifData.GPS) {
-                console.log(exifData.GPS['2'][0][0], exifData.GPS['4'][0][0])
-                exifData.GPS['2'][0][0] = encrypt(exifData.GPS['2'][0][0] + 3, key, iv, true)
-                exifData.GPS['4'][0][0] = encrypt(exifData.GPS['4'][0][0] + 3, key, iv, true)
-                // exifData['GPS'][px.GPSIFD.GPSSatellites] = encrypt(exifData['GPS'][px.GPSIFD.GPSSatellites], key, iv)
+                exifData.GPS['2'][0][0] = addFromLength(exifData.GPS['2'][0][0], parseInt(coordAdd))
+                exifData.GPS['4'][0][0] = addFromLength(exifData.GPS['4'][0][0], parseInt(coordAdd))
             }
 
             exifData['0th']['306'] = encrypt(exifData['0th']['306'], key, iv)
@@ -147,11 +98,16 @@ app.post('/upload', upload.single('file'), (req, res) => {
 
     const fileLink = 'http://localhost:3000/download/' + newFileName + fileExtension
 
+    const keyString = key.toString('hex').match(/.{1,2}/g).join(' ')
+    const ivString = iv.toString('hex').match(/.{1,2}/g).join(' ')
+
     res.json({ message: 'File uploaded successfully',
                 data: {
                     link: fileLink,
-                    recovery_key: key,
-                    recovery_vector: iv
+                    filename: newFileName + fileExtension,
+                    recovery_shift_number: coordAdd,
+                    recovery_key: keyString,
+                    recovery_vector: ivString
                 }
     });
 });
@@ -173,6 +129,85 @@ app.get('/download/:filename', (req, res) => {
         res.status(404).json({ error: 'File not found' });
     }
 });
+
+app.post('/original/:filename', upload.single('file'), (req, res) => {
+    console.log(req.params.filename, '\n', req.body.shift)
+    if (req.body.shift > 10 && typeof(req.body.shift) !== 'number') {
+        res.json({
+            status: 400,
+            message: 'bad request',
+            error: 'input a number between 1-10'
+        })
+        return;
+    }
+
+    const filename = req.params.filename
+    const coordAdd = req.body.shift
+    const currentDir = path.dirname(new URL(import.meta.url).pathname);
+    const filePath = path.join(currentDir, '/uploads/', filename).slice(1);
+
+    if (fs.existsSync(filePath)) {
+        
+        let iv = req.body.iv;
+        let key = req.body.key;
+
+        const cleanedIV = iv.replace(/\s/g, '');
+        const cleanedKey = key.replace(/\s/g, '');
+
+        const ivBuffer = Buffer.from(cleanedIV, 'hex');
+        const keyBuffer = Buffer.from(cleanedKey, 'hex');
+
+        console.log(ivBuffer);
+        console.log(keyBuffer);
+
+        const fileExtension = path.extname(filePath).toLowerCase();
+
+        if (fileExtension === '.jpg' || fileExtension === '.jpeg' || fileExtension === '.png') {
+            const imageData = fs.readFileSync(filePath)
+            const exifData = px.load(imageData.toString('binary'));
+
+            try {
+                if (exifData.GPS) {
+                    exifData.GPS['2'][0][0] = subtractFromLength(exifData.GPS['2'][0][0], parseInt(coordAdd))
+                    exifData.GPS['4'][0][0] = subtractFromLength(exifData.GPS['4'][0][0], parseInt(coordAdd))
+                }
+    
+                exifData['0th']['306'] = decrypt(exifData['0th']['306'], keyBuffer, ivBuffer)
+                exifData.Exif['36867'] = decrypt(exifData.Exif['36867'], keyBuffer, ivBuffer)
+                exifData.Exif['36868'] = decrypt(exifData.Exif['36868'], keyBuffer, ivBuffer)
+                exifData['0th']['271'] = decrypt(exifData['0th']['271'], keyBuffer, ivBuffer)
+                exifData['0th']['272'] = decrypt(exifData['0th']['272'], keyBuffer, ivBuffer)
+            }
+            catch (e) {
+                console.log(e)
+                res.json({
+                    status: 500,
+                    message: 'internal server error',
+                    error: e
+                })
+                return;
+            }
+
+            const editedImageData = px.insert(px.dump(exifData), imageData.toString('binary'));
+            fs.writeFileSync(filePath, editedImageData, 'binary');
+        }
+        
+        res.json({
+            status: 200,
+            message: 'File exists',
+            data: {
+                link: "http://localhost:3000/download/" + filename,
+            }
+        });
+    } else {
+        res.json({
+            status: 404,
+            message: 'Not Found',
+            error: 'File not found'
+        });
+    }
+})
+
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
